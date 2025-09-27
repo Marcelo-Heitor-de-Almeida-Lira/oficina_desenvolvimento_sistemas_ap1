@@ -4,6 +4,3 @@ venv
 
 # Caches
 __pycache__
-
-# covers
-frontend/book_covers

@@ -7,6 +7,9 @@ from math import sqrt
 app = FastAPI()
 
 books = pd.read_csv("dataset/books_clean.csv")
+covers = pd.read_csv("covers.csv")
+
+DEFAULT_COVER = "https://placehold.co/200x300?text=Livro+Nao+Encontrado"
 
 def load_ratings():
     ratings = pd.read_csv("dataset/ratings.csv", dtype={"user_id": str})
@@ -42,10 +45,20 @@ def ComputeNearestNeighbor(username, user_ratings_matrix, sparse_matrix):
     similaridades = cosine_similarity(sparse_matrix[user_index], sparse_matrix).flatten()
     
     indices = similaridades.argsort()[::-1]
+
+    nearest_neighbor = indices[1]
     
-    top_indices = indices[1:6]
-    
-    return [(user_ratings_matrix.index[i], similaridades[i]) for i in top_indices]
+    return str(user_ratings_matrix.index[nearest_neighbor])
+
+
+def get_books_from_user(user_id):
+    ratings = load_ratings()
+
+    user_ratings = ratings[ratings["user_id"] == user_id]
+
+    user_books = user_ratings["book_id"].values.tolist()
+
+    return user_books
 
 
 
@@ -54,17 +67,38 @@ def home():
     return {"message": "API de recomendação funcionando"}
 
 @app.get("/livros")
-def get_livros():
-    return books.head().to_dict(orient="records")
+def get_livros(page: int = 1, page_size: int = 15):
+    start = (page - 1) * page_size
+    end = start + page_size
+    page_books = books.iloc[start:end]
+    return page_books.to_dict(orient="records")
 
-@app.get("/livro/{id}")
-def get_livro(id: int):
-    book = books[books["book_id"] == id]
+@app.get("/livro/{title}")
+def get_livro(title: str):
+    book = books[books["title"] == title]
 
     if book.empty:
         return {"error": "Livro não encontrado"}
     
     return book.iloc[0].to_dict()
+
+@app.get("/livro/capa_title/{title}")
+def get_capa(title: str):
+    cover = covers[covers["title"] == title]
+    cover_path = cover["cover_path"].values[0]
+    if not pd.notna(cover_path) or cover_path.strip() == "":
+        cover_path = DEFAULT_COVER
+    return cover_path
+
+@app.get("/livro/capa_id/{id}")
+def get_capa(id: int):
+    cover = covers[covers["book_id"] == id]
+    cover_path = cover["cover_path"].values[0]
+    title = cover["title"].values[0]
+    author = cover["author"].values[0]
+    if not pd.notna(cover_path) or cover_path.strip() == "":
+        cover_path = DEFAULT_COVER
+    return {"cover": cover_path, "title": title, "author": author}
 
 @app.get("/recomendacao/{username}")
 def recomendar(username: str):
@@ -73,12 +107,19 @@ def recomendar(username: str):
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
     
     nearest_neighbor = ComputeNearestNeighbor(username, ratings_matrix, rating_csr)
-    return {"user": username, "nearest": nearest_neighbor}
+
+    recomended_books = get_books_from_user(nearest_neighbor)
+
+    return recomended_books
     
 
 @app.post("/avaliar_livro")
-def avaliar_livro(user_id: str, book_id: int, rating:int):
+def avaliar_livro(user_id: str, title: str, rating:int):
     ratings = load_ratings()
+
+    book = books[books["title"] == title]
+
+    book_id = book["book_id"].values[0]
     
     new_rating = {'user_id': user_id, 'book_id': book_id, 'rating': rating}
     new_rating_df = pd.DataFrame([new_rating])

@@ -62,7 +62,8 @@ def app():
             if response.status_code == 200:
                 livro = response.json()
                 col.write(f"Autor: {livro['author']}")
-                col.image(livro["cover"], caption=livro["title"], width=300)
+                cover_path = livro["cover"]
+                col.image(cover_path, caption=livro["title"], width=300)
             else:
                 st.error("Erro ao buscar capa do livro")
             i += 1

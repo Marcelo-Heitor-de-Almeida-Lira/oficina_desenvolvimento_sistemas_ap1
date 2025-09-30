@@ -15,33 +15,82 @@ DEFAULT_COVER = "https://placehold.co/200x300?text=Livro+Nao+Encontrado"
 # --- Funções auxiliares ---
 
 def load_ratings():
-    ratings = pd.read_csv("dataset/ratings.csv", dtype={"user_id": str})
+    ratings = pd.read_csv("dataset/ratings_reduced.csv", dtype={"user_id": str})
     return ratings
 
 def load_ratings_optimized():
-    ratings = pd.read_csv("dataset/ratings.csv", dtype={"user_id": str})
+    ratings = pd.read_csv("dataset/ratings_reduced.csv", dtype={"user_id": str})
     user_item_matrix = ratings.pivot(index="user_id", columns="book_id", values="rating").fillna(0)
     sparse_matrix = csr_matrix(user_item_matrix.values)
     return ratings, user_item_matrix, sparse_matrix
 
 def ComputeNearestNeighbor(username, user_ratings_matrix, sparse_matrix):
     user_index = user_ratings_matrix.index.get_loc(username)
-    similaridades = cosine_similarity(sparse_matrix[user_index], sparse_matrix).flatten()
-    indices = similaridades.argsort()[::-1]
-    nearest_neighbor = indices[1]  # pega o segundo, pois o primeiro é ele mesmo
-    return str(user_ratings_matrix.index[nearest_neighbor])
 
-def get_books_from_user(user_id):
+    similaridades = cosine_similarity(sparse_matrix[user_index], sparse_matrix).flatten()
+
+    indices = similaridades.argsort()[::-1]
+
+    neighbors = []
+
+    for idx in indices[1:10]:
+        neighbors.append({
+            "username": str(user_ratings_matrix.index[idx]),
+            "cosine": float(similaridades[idx])
+        })
+
+    return neighbors
+
+def get_recommendation_from_users(neighbors):
     ratings = load_ratings()
-    user_ratings = ratings[ratings["user_id"] == user_id]
-    user_books = user_ratings["book_id"].values.tolist()
-    return user_books
+
+    books_recommend = set()
+    influences = {}
+    total_similarity = 0
+    book_points = {}
+
+    for user in neighbors:
+        user_rating = ratings[ratings["user_id"] == user["username"]]
+        for book in user_rating["book_id"]:
+            books_recommend.add(book)
+        total_similarity += user["cosine"]
+
+    for user in neighbors:
+        influences[user["username"]] = user["cosine"] / total_similarity
+    
+    for book in books_recommend:
+        book_points_neighbors = 0
+        for user in neighbors:
+            user_rating = ratings[ratings["user_id"] == user["username"]]
+            user_book = user_rating[user_rating["book_id"] == book]
+            if not user_book.empty:
+                user_book_rating = user_book["rating"].values[0]
+            else:
+                user_book_rating = 0
+            user_cosine = influences[user["username"]]
+            book_points_neighbors += user_book_rating * user_cosine
+        book_points[book] = book_points_neighbors
+
+    top_books = dict(
+        sorted(book_points.items(), key=lambda x: x[1], reverse=True)[:21]
+    )
+
+    return top_books
 
 # --- Rotas ---
 
 @app.get("/")
 def home():
     return {"message": "API de recomendação funcionando"}
+
+@app.get("/livros_titulo")
+def get_title_books():
+    return books.fillna("").to_dict(orient="records")
+
+@app.get("/users_id")
+def get_users_id():
+    ratings = load_ratings()
+    return ratings.to_dict(orient="records")
 
 @app.get("/livros")
 def get_livros(page: int = 1, page_size: int = 15):
@@ -106,20 +155,23 @@ def recomendar(username: str, test_ratio: float = Query(0.2, ge=0.1, le=0.9)):
     sparse_matrix = csr_matrix(user_item_matrix.values)
 
     # Vizinho mais próximo
-    nearest_neighbor = ComputeNearestNeighbor(username, user_item_matrix, sparse_matrix)
-    recomended_books = get_books_from_user(nearest_neighbor)
+    nearest_neighbors = ComputeNearestNeighbor(username, user_item_matrix, sparse_matrix)
+    recomended_books = get_recommendation_from_users(nearest_neighbors)
 
     # Calcular acurácia
     test_books = set(test_ratings["book_id"].values.tolist())
-    recommended_books_set = set(recomended_books)
-    acertos = len(test_books & recommended_books_set)
+    acertos = len(test_books & recomended_books.keys())
     acuracia = acertos / len(recomended_books) if recomended_books else 0
+    acuracia_teste = acertos / len(test_books)
 
     return {
-        "recommended_books": recomended_books,
+        "recommended_books": list(recomended_books.keys()),
+        "test_books": test_books,
+        "total_teste": len(test_books),
         "acertos": acertos,
         "total_recomendacoes": len(recomended_books),
-        "acuracia": round(acuracia, 2)
+        "acuracia": round(acuracia, 2),
+        "acuracia_teste": round(acuracia_teste, 2)
     }
 
 # --- Avaliar livro ---

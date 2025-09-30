@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import pandas as pd
 import plotly.express as px
+import urllib.parse
 
 API_URL = "http://127.0.0.1:8000"
 
@@ -46,6 +47,10 @@ def app():
     page = st.session_state.get("page", 1)
     page_size = 15
     
+    if st.button("Página anterior") and page > 1:
+        page -= 1
+        st.session_state.page = page
+
     if st.button("Próxima página"):
         page += 1
         st.session_state.page = page
@@ -72,12 +77,23 @@ def app():
     
     st.subheader("🔍 Buscar livro")
 
-    book_title = st.text_input("Digite o título do livro")
+    response = requests.get(f"{API_URL}/livros_titulo")
+
+    if response.status_code == 200:
+        titles = response.json()
+        titles = pd.DataFrame(titles)
+        titles = titles["title"].tolist()
+    else:
+        st.error("Erro ao buscar livros")
+
+    book_title = st.selectbox("Digite o título do livro", options=titles)
+
+    encoded_title = urllib.parse.quote(book_title)
 
     col1, col2, col3 = st.columns([1,1,2], gap="small")
 
     if st.button("Buscar livro"):
-        response = requests.get(f"{API_URL}/livro/{book_title}")
+        response = requests.get(f"{API_URL}/livro/{encoded_title}")
         if response.status_code == 200:
             livro = response.json()
             if "error" in livro:

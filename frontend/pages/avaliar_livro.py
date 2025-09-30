@@ -1,4 +1,6 @@
 import streamlit as st
+import pandas as pd
+import urllib.parse
 import requests
 
 API_URL = "http://127.0.0.1:8000"
@@ -19,8 +21,27 @@ def avaliar():
     
     st.title("⭐ Avaliar Livro")
 
-    user_id = st.text_input("Seu ID de usuário")
-    book_title = st.text_input("Título do livro")
+    response = requests.get(f"{API_URL}/users_id")
+    if response.status_code == 200:
+        users_id = response.json()
+        users_id = pd.DataFrame(users_id)
+        users_id = users_id["user_id"].unique().tolist()
+    else:
+        st.error("Erro ao buscar ids dos usuários")
+
+    user_id = st.selectbox("Seu ID de usuário", options=users_id)
+
+    response = requests.get(f"{API_URL}/livros_titulo")
+    if response.status_code == 200:
+        titles = response.json()
+        titles = pd.DataFrame(titles)
+        titles = titles["title"].tolist()
+    else:
+        st.error("Erro ao buscar títulos")
+
+    book_title = st.selectbox("Título do livro", options=titles)
+    encoded_title = urllib.parse.quote(book_title)
+
     rating = st.slider("Avaliação", 1, 5, 3)
 
     if st.button("Enviar Avaliação"):
